@@ -3,19 +3,17 @@ package jp.ac.titech.itpro.sdl.simplemap;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.PendingResult;
-import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
@@ -24,15 +22,20 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.MarkerOptions;
 
 public class MainActivity extends AppCompatActivity implements
-        GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, LocationListener {
+        GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener,
+        LocationListener {
+
     private final static String TAG = "MainActivity";
 
     private GoogleMap googleMap;
     private GoogleApiClient googleApiClient;
     private LocationRequest locationRequest;
-    private boolean requestingLocationUpdate;
+
+    private boolean requestingLocationUpdate = false;
 
     private enum UpdatingState {STOPPED, REQUESTING, STARTED}
 
@@ -52,8 +55,19 @@ public class MainActivity extends AppCompatActivity implements
         mapFragment.getMapAsync(new OnMapReadyCallback() {
             @Override
             public void onMapReady(GoogleMap map) {
-                map.moveCamera(CameraUpdateFactory.zoomTo(15f));
                 googleMap = map;
+                googleMap.getUiSettings().setZoomControlsEnabled(true);//拡大縮小ボタン表示
+                googleMap.moveCamera(CameraUpdateFactory.zoomTo(15f));
+                googleMap.setOnMyLocationButtonClickListener(new GoogleMap.OnMyLocationButtonClickListener() {
+                    @Override
+                    public boolean onMyLocationButtonClick() {
+                        Toast.makeText(MainActivity.this, "MyLocation button clicked", Toast.LENGTH_SHORT).show();
+                        // Return false so that we don't consume the event and the default behavior still occurs
+                        // (the camera animates to the user's current position).
+                        return false;
+                    }
+                });
+                enableMyLocation();
             }
         });
 
@@ -67,6 +81,21 @@ public class MainActivity extends AppCompatActivity implements
         locationRequest.setInterval(10000);
         locationRequest.setFastestInterval(5000);
         locationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
+    }
+
+    /**
+     * Enables the My Location layer if the fine location permission has been granted.
+     */
+    private void enableMyLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            // Permission to access the location is missing.
+            PermissionUtils.requestPermission(this, REQCODE_PERMISSIONS,
+                    Manifest.permission.ACCESS_FINE_LOCATION, true);
+        } else if (googleMap != null) {
+            // Access to the location has been granted to the app.
+            googleMap.setMyLocationEnabled(true);
+        }
     }
 
     @Override
@@ -121,8 +150,19 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onLocationChanged(Location location) {
         Log.d(TAG, "onLocationChanged: " + location);
-        googleMap.animateCamera(CameraUpdateFactory
-                .newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
+        // 初期表示時のみ、現在地にカメラを移動
+        if (!requestingLocationUpdate) {
+            LatLng currentLocation = new LatLng(location.getLatitude(), location.getLongitude());
+
+            // ピンを設定
+            MarkerOptions options = new MarkerOptions();
+            options.position(currentLocation);
+            options.title("First Current Location");
+
+            googleMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
+            requestingLocationUpdate = true;
+        }
+
     }
 
     @Override
@@ -130,9 +170,9 @@ public class MainActivity extends AppCompatActivity implements
                                            @NonNull String[] permissions, @NonNull int[] grants) {
         Log.d(TAG, "onRequestPermissionsResult");
         switch (reqCode) {
-        case REQCODE_PERMISSIONS:
-            startLocationUpdate(false);
-            break;
+            case REQCODE_PERMISSIONS:
+                startLocationUpdate(false);
+                break;
         }
     }
 
